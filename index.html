@@ -1,0 +1,217 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Babylon.js GLB Viewer - Fade + Smooth Zoom + Reset</title>
+    <style>
+        html, body {
+            margin: 0;
+            overflow: hidden;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            font-family: sans-serif;
+        }
+        #renderCanvas {
+            width: 100%;
+            height: 70%;
+            display: block;
+        }
+        #meshContainer {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            border-top: 2px solid #333;
+        }
+        #meshTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #meshTable th, #meshTable td {
+            border: 1px solid #ccc;
+            padding: 5px;
+            cursor: pointer;
+        }
+        #meshTable tbody {
+            display: block;
+            overflow-y: auto;
+            max-height: 300px;
+        }
+        #meshTable thead, #meshTable tbody tr {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+        }
+        .selected {
+            background-color: #fffa90 !important;
+        }
+        #controls {
+            padding: 5px;
+            border-top: 1px solid #ccc;
+            background: #f9f9f9;
+        }
+        #resetBtn {
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+
+    <div id="meshContainer">
+        <h2>Meshes in Model</h2>
+        <div id="controls">
+            <button id="resetBtn">Reset View</button>
+        </div>
+		<table id="meshTable">
+            <thead>
+                <tr><th>Mesh Name</th></tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        
+    </div>
+
+    <!-- Babylon.js -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+        const scene = new BABYLON.Scene(engine);
+        scene.clearColor = new BABYLON.Color4(0.9, 0.9, 0.9, 1);
+
+        const camera = new BABYLON.ArcRotateCamera("camera", Math.PI / 2, Math.PI / 3, 10, BABYLON.Vector3.Zero(), scene);
+        camera.attachControl(canvas, true);
+
+        const light1 = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(1, 1, 0), scene);
+        const light2 = new BABYLON.DirectionalLight("light2", new BABYLON.Vector3(-1, -2, -1), scene);
+
+        let meshTableBody = document.querySelector("#meshTable tbody");
+        let initialCameraState = {
+            target: camera.target.clone(),
+            radius: camera.radius
+        };
+
+        BABYLON.SceneLoader.Append("models/", "example_model.glb", scene, function (scene) {
+            console.log("Model loaded!");
+
+            meshTableBody.innerHTML = "";
+
+            scene.meshes.forEach((mesh) => {
+                if (mesh.name && mesh.name !== "__root__") {
+                    console.log("Mesh:", mesh.name);
+
+                    const row = document.createElement("tr");
+                    const cell = document.createElement("td");
+                    cell.textContent = mesh.name;
+
+                    row.appendChild(cell);
+
+                    row.addEventListener("click", () => {
+                        zoomToMesh(mesh);
+                        updateURL(mesh.name);
+                        highlightSelectedRow(row);
+                        fadeOtherMeshes(mesh);
+                    });
+
+                    meshTableBody.appendChild(row);
+                }
+            });
+
+            // Check URL param mesh
+            const urlParams = new URLSearchParams(window.location.search);
+            const meshParam = urlParams.get("mesh");
+
+            if (meshParam) {
+                const targetMesh = scene.meshes.find(m => m.name === meshParam);
+                if (targetMesh) {
+                    console.log(`Zooming to mesh from URL param: ${meshParam}`);
+                    zoomToMesh(targetMesh);
+                    fadeOtherMeshes(targetMesh);
+
+                    // Highlight row
+                    const rows = meshTableBody.querySelectorAll("tr");
+                    rows.forEach(row => {
+                        if (row.firstChild.textContent === meshParam) {
+                            highlightSelectedRow(row);
+                        }
+                    });
+                } else {
+                    console.warn(`Mesh '${meshParam}' not found.`);
+                }
+            }
+        });
+
+        function zoomToMesh(mesh) {
+            const boundingInfo = mesh.getBoundingInfo();
+            const center = boundingInfo.boundingBox.centerWorld;
+            const radius = boundingInfo.boundingSphere.radiusWorld;
+
+            animateCameraTarget(center);
+            animateCameraRadius(radius * 2);
+        }
+
+        function animateCameraTarget(targetVec) {
+            BABYLON.Animation.CreateAndStartAnimation("cameraTargetAnim", camera, "target", 60, 60, camera.target.clone(), targetVec, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+        }
+
+        function animateCameraRadius(targetRadius) {
+            BABYLON.Animation.CreateAndStartAnimation("cameraRadiusAnim", camera, "radius", 60, 60, camera.radius, targetRadius, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+        }
+
+        function updateURL(meshName) {
+            const url = new URL(window.location.href);
+            url.searchParams.set("mesh", meshName);
+            window.history.replaceState({}, '', url);
+        }
+
+        function highlightSelectedRow(selectedRow) {
+            document.querySelectorAll("#meshTable tbody tr").forEach(row => {
+                row.classList.remove("selected");
+            });
+            selectedRow.classList.add("selected");
+        }
+
+        function fadeOtherMeshes(selectedMesh) {
+            scene.meshes.forEach((mesh) => {
+                if (mesh === selectedMesh || mesh.name === "__root__") {
+                    mesh.visibility = 1.0;
+                } else {
+                    mesh.visibility = 0.4;
+                }
+            });
+        }
+
+        function resetView() {
+            animateCameraTarget(initialCameraState.target);
+            animateCameraRadius(initialCameraState.radius);
+            document.querySelectorAll("#meshTable tbody tr").forEach(row => {
+                row.classList.remove("selected");
+            });
+            scene.meshes.forEach(mesh => {
+                mesh.visibility = 1.0;
+            });
+            // Clear URL param
+            const url = new URL(window.location.href);
+            url.searchParams.delete("mesh");
+            window.history.replaceState({}, '', url);
+        }
+
+        document.getElementById("resetBtn").addEventListener("click", resetView);
+
+        engine.runRenderLoop(() => {
+            scene.render();
+        });
+
+        window.addEventListener("resize", () => {
+            engine.resize();
+        });
+    </script>
+</body>
+</html>
