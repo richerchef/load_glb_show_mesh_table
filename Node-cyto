@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pipe Isolation Demo</title>
+  <style>
+    body {
+      margin: 0;
+      display: flex;
+      font-family: sans-serif;
+    }
+    #sidebar {
+      width: 200px;
+      background: #f0f0f0;
+      border-right: 1px solid #ccc;
+      padding: 10px;
+    }
+    #cy {
+      flex: 1;
+      height: 100vh;
+      background-image: url('https://via.placeholder.com/1000x800?text=Plant+Diagram');
+      background-size: contain;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    button {
+      display: block;
+      margin: 5px 0;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h3>Valves</h3>
+  <div id="valve-controls"></div>
+</div>
+
+<div id="cy"></div>
+
+<script src="https://unpkg.com/cytoscape@3.24.0/dist/cytoscape.min.js"></script>
+<script>
+  const graphData = {
+    nodes: [
+      { data: { id: 'Pump1', type: 'Pump' }, position: { x: 100, y: 200 } },
+      { data: { id: 'Tee1', type: 'Tee' }, position: { x: 300, y: 200 } },
+      { data: { id: 'Valve1', type: 'Valve' }, position: { x: 500, y: 150 } },
+      { data: { id: 'Equip1', type: 'Equip' }, position: { x: 700, y: 150 } },
+      { data: { id: 'Valve2', type: 'Valve' }, position: { x: 500, y: 250 } },
+      { data: { id: 'Equip2', type: 'Equip' }, position: { x: 700, y: 250 } }
+    ],
+    edges: [
+      { data: { id: 'e1', source: 'Pump1', target: 'Tee1', valve: 'none' } },
+      { data: { id: 'e2', source: 'Tee1', target: 'Valve1', valve: 'Valve1', valveOpen: true } },
+      { data: { id: 'e3', source: 'Valve1', target: 'Equip1', valve: 'none' } },
+      { data: { id: 'e4', source: 'Tee1', target: 'Valve2', valve: 'Valve2', valveOpen: true } },
+      { data: { id: 'e5', source: 'Valve2', target: 'Equip2', valve: 'none' } }
+    ]
+  };
+
+  const cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: graphData,
+    layout: { name: 'preset' },
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'label': 'data(id)',
+          'background-color': 'data(color)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'width': 40,
+          'height': 40
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 4,
+          'line-color': ele => ele.data('valve') && ele.data('valve') !== 'none'
+            ? (ele.data('valveOpen') ? '#00cc00' : '#cc0000')
+            : '#999',
+          'target-arrow-shape': 'triangle',
+          'target-arrow-color': '#999'
+        }
+      }
+    ]
+  });
+
+  function updateIsolation() {
+    const visited = new Set();
+    const queue = [];
+
+    cy.nodes().forEach(node => node.data('color', '#999'));
+
+    cy.nodes().forEach(node => {
+      if (node.data('type') === 'Pump') {
+        visited.add(node.id());
+        queue.push(node);
+      }
+    });
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      current.data('color', '#00cc00');
+
+      current.connectedEdges().forEach(edge => {
+        if (edge.data('valve') && edge.data('valve') !== 'none' && !edge.data('valveOpen')) return;
+
+        const target = edge.target().id() === current.id() ? edge.source() : edge.target();
+
+        if (!visited.has(target.id())) {
+          visited.add(target.id());
+          queue.push(target);
+        }
+      });
+    }
+
+    cy.nodes().forEach(node => {
+      node.style('background-color', node.data('color'));
+    });
+  }
+
+  function setupSidebar() {
+    const valveControls = document.getElementById('valve-controls');
+    valveControls.innerHTML = '';
+
+    cy.edges().forEach(edge => {
+      if (edge.data('valve') && edge.data('valve') !== 'none') {
+        const btn = document.createElement('button');
+        btn.textContent = `${edge.data('valve')} (${edge.data('valveOpen') ? 'Open' : 'Closed'})`;
+        btn.onclick = () => {
+          edge.data('valveOpen', !edge.data('valveOpen'));
+          edge.style('line-color', edge.data('valveOpen') ? '#00cc00' : '#cc0000');
+          updateIsolation();
+          setupSidebar();
+        };
+        valveControls.appendChild(btn);
+      }
+    });
+  }
+
+  cy.nodes().forEach(node => {
+    if (node.data('type') === 'Valve') {
+      node.on('click', () => {
+        cy.edges().forEach(edge => {
+          if (edge.data('valve') === node.id()) {
+            edge.data('valveOpen', !edge.data('valveOpen'));
+            edge.style('line-color', edge.data('valveOpen') ? '#00cc00' : '#cc0000');
+            updateIsolation();
+            setupSidebar();
+          }
+        });
+      });
+    }
+  });
+
+  updateIsolation();
+  setupSidebar();
+</script>
+</body>
+</html>
