@@ -1,19 +1,41 @@
-<button onclick="console.log('This is a test log!')">Click me</button>
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Console Log/Error to Modal</title>
+</head>
+<body>
+  <button onclick="console.log('This is a test log!')">Log Message</button>
+  <button onclick="console.error('This is a test error!')">Trigger Error</button>
+  <button onclick="nonexistentFunction()">Throw Exception</button>
 
-  <!-- Modal -->
   <div id="logModal" style="display:none; position:fixed; top:30%; left:30%; background:white; padding:20px; border:1px solid black; z-index:1000;">
     <p id="modalMessage"></p>
     <button onclick="document.getElementById('logModal').style.display='none'">Close</button>
   </div>
 
   <script>
-    // Override console.log
-    const realConsoleLog = console.log;
+    const realLog = console.log;
+    const realError = console.error;
+
     console.log = function(message) {
-      // Show modal
-      document.getElementById('modalMessage').textContent = message;
-      document.getElementById('logModal').style.display = 'block';
-      // Optional: still log to real console (in case F12 is open)
-      realConsoleLog(message);
+      showModal("Log: " + message);
+      realLog(message);
     };
+
+    console.error = function(message) {
+      showModal("Error: " + message);
+      realError(message);
+    };
+
+    window.onerror = function(message, source, lineno, colno, error) {
+      showModal(`Uncaught Error: ${message} at ${source}:${lineno}:${colno}`);
+      return false;
+    };
+
+    function showModal(msg) {
+      document.getElementById('modalMessage').textContent = msg;
+      document.getElementById('logModal').style.display = 'block';
+    }
   </script>
+</body>
+</html>
