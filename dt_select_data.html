@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AG Grid with Leaflet</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+    #pageHeader {
+      height: 50px;
+      background: #2c3e50;
+      color: white;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #container {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 30%;
+      max-width: 500px;
+      min-width: 200px;
+      background: #f9f9f9;
+      border-right: 1px solid #ccc;
+      display: flex;
+      flex-direction: column;
+    }
+    #map {
+      flex-grow: 1;
+    }
+    #myGrid {
+      flex-grow: 1;
+      height: 100%;
+    }
+    #searchBox {
+      padding: 5px;
+      border-bottom: 1px solid #ccc;
+    }
+    #searchInput {
+      width: 95%;
+      padding: 5px;
+      margin-bottom: 5px;
+    }
+    #columnToggle {
+      padding: 5px;
+      border-bottom: 1px solid #ccc;
+    }
+    #columnToggle label {
+      display: block;
+    }
+    #columnToggle .collapsible {
+      background-color: #eee;
+      cursor: pointer;
+      padding: 10px;
+      width: 100%;
+      border: none;
+      text-align: left;
+      outline: none;
+      font-size: 16px;
+    }
+    #columnToggle .active, #columnToggle .collapsible:hover {
+      background-color: #ccc;
+    }
+    #columnToggle .content {
+      padding: 0 10px;
+      display: none;
+      overflow: hidden;
+    }
+    footer {
+      height: 30px;
+      background-color: #2c3e50;
+      color: white;
+      text-align: center;
+      line-height: 30px;
+      flex-shrink: 0;
+    }
+
+    #legend div {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+#legend span {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+
+#legend {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background: white;
+  padding: 8px;
+  border-radius: 5px;
+  font-size: 12px;
+  box-shadow: 0 0 5px rgba(0,0,0,0.3);
+  z-index: 1000;
+
+  max-height: 150px;   /* limit container height */
+  overflow-y: auto;    /* scroll vertically if needed */
+  width: 180px;        /* optional fixed width */
+  resize: horizontal;
+  overflow-x: auto;
+}
+
+#sidebar {
+  position: relative; /* needed for absolute resizer */
+  width: 30%;
+  max-width: 500px;
+  min-width: 200px;
+  background: #f9f9f9;
+  border-right: 1px solid #ccc;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;  /* draggable width */
+  height: 100%;
+  cursor: ew-resize;  /* left-right resize cursor */
+  background: transparent;
+  z-index: 10;
+}
+
+  </style>
+</head>
+<body>
+<header id="pageHeader">
+  <h1>Extended Map Viewer</h1>
+  <div id="searchBox">
+    <input type="text" id="searchInput" placeholder="Search all..." list="autocomplete" />
+    <datalist id="autocomplete"></datalist>
+  </div>
+
+<select id="colorBy">
+  <option disabled selected>Loading columns...</option>
+</select>
+
+
+  <div>
+    <label><input type="checkbox" id="toggleCluster" checked /> Cluster Markers</label>
+    <button onclick="exportToCSV()">Export to CSV</button>
+  </div>
+</header>
+<div id="container">
+  <div id="sidebar">
+  <div id="columnToggle">
+    <button type="button" class="collapsible">Toggle Columns</button>
+    <div class="content" id="columnContent"></div>
+  </div>
+  <div id="myGrid" class="ag-theme-alpine"></div>
+
+  <div id="sidebar-resizer"></div>  <!-- Add this -->
+</div>
+  <div id="map">
+  <div id="legend" style="position:absolute; bottom:10px; left:10px; background:white; padding:8px; border-radius:5px; font-size:12px; box-shadow:0 0 5px rgba(0,0,0,0.3); z-index:1000;"></div>
+
+<!-- Toggle Button -->
+<button id="toggleChartSidebar" style="position:fixed;top:10px;right:10px;z-index:1000;">📊 Charts</button>
+
+<!-- Sidebar -->
+<div id="chartSidebar" style="
+  position:fixed;
+  top:0;
+  right:0;
+  width:350px;
+  height:100%;
+  background:#fff;
+  border-left:1px solid #ccc;
+  box-shadow:-2px 0 5px rgba(0,0,0,0.1);
+  transform:translateX(100%);
+  transition:transform 0.3s ease;
+  z-index:999;
+  overflow:auto;
+  padding:10px;
+">
+  <button onclick="toggleChartSidebar()" style="float:right;">✖</button>
+  <h3>Data Visualizer</h3>
+  <br><br>
+
+  <label for="columnSelect">Column:</label>
+  <select id="columnSelect"></select>
+
+  <canvas id="sidebarChart" height="300"></canvas>
+</div>
+
+</div>
+</div>
+
+<footer>
+  <span id="rowCount">Rows: 0</span>
+
+<select id="datasetSelect">
+  <option value="coordinates.csv|data.csv">Dataset 1</option>
+  <option value="coordinates.csv|data1.csv">Dataset 2</option>
+  <option value="coordinates.csv|data3.csv">Dataset 3</option>
+  <option value="upload">Upload CSV...</option>
+</select>
+
+<input type="file" id="csvFileInput" accept=".csv" style="display:none" />
+
+
+</footer>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@29.3.3/dist/ag-grid-community.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.3.2/papaparse.min.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+
+<script>
+
+const map = L.map('map', { crs: L.CRS.Simple, minZoom: -2, maxZoom: 2 });
+const bounds = [[0, 0], [1000, 2000]];
+L.imageOverlay('image1.png', bounds).addTo(map);
+map.fitBounds(bounds);
+
+let useClustering = true;
+const markerClusterGroup = L.markerClusterGroup();
+const markerLayerGroup = L.layerGroup();
+map.addLayer(markerClusterGroup);
+
+document.getElementById('toggleCluster').addEventListener('change', e => {
+  useClustering = e.target.checked;
+  updateVisibleMarkers();
+});
+
+document.getElementById('searchInput').addEventListener('input', e => {
+  const value = e.target.value.toLowerCase();
+  gridOptions.api.setQuickFilter(value);
+});
+
+let gridOptions = {
+  columnDefs: [],
+  rowData: [],
+  animateRows: true,
+  rowSelection: 'single',
+  masterDetail: true,
+  detailCellRendererParams: {
+    detailGridOptions: {
+      columnDefs: [],
+      defaultColDef: {
+        flex: 1,
+        minWidth: 100,
+        resizable: true
+      }
+    },
+    getDetailRowData: function(params) {
+      params.successCallback([params.data]);
+    }
+  },
+  defaultColDef: {
+    flex: 1,
+    minWidth: 100,
+    filter: true,
+    resizable: true,
+    sortable: true,
+    menuTabs: ['filterMenuTab', 'generalMenuTab']
+  },
+  sideBar: ['filters'],
+  onRowClicked: event => {
+    const marker = event.data._marker;
+    if (marker) {
+      map.flyTo([marker.getLatLng().lat, marker.getLatLng().lng], 4);
+      marker.openPopup();
+    }
+  },
+  onFilterChanged: () => {
+    updateVisibleMarkers();
+    const count = gridOptions.api.getDisplayedRowCount();
+    document.getElementById('rowCount').textContent = `Rows: ${count}`;
+    updateSidebarChart();
+  },
+  onFirstDataRendered: params => {
+  params.api.sizeColumnsToFit();
+  populateChartColumnSelect();
+  updateSidebarChart();
+},
+  onGridSizeChanged: params => params.api.sizeColumnsToFit(),
+};
+
+new agGrid.Grid(document.querySelector('#myGrid'), gridOptions);
+
+document.querySelector('.collapsible').addEventListener('click', function () {
+  this.classList.toggle('active');
+  const content = this.nextElementSibling;
+  content.style.display = content.style.display === 'block' ? 'none' : 'block';
+});
+
+let markers = [];
+let colorByColumn = null;
+const colorMap = new Map();
+
+function loadAndMergeCSVs(coordFile, dataFile) {
+  Papa.parse(coordFile, {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: function(coordResults) {
+      Papa.parse(dataFile, {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: function(dataResults) {
+          setupGridAndMarkers(coordResults.data, dataResults.data);
+        },
+        error: function(err) {
+          alert('Error loading data CSV: ' + err.message);
+        }
+      });
+    },
+    error: function(err) {
+      alert('Error loading coordinates CSV: ' + err.message);
+    }
+  });
+}
+
+// Shared function to process coordinate and data arrays and update map/grid
+function setupGridAndMarkers(coordData, dataRows) {
+  gridOptions.api.setRowData([]);
+  document.getElementById('autocomplete').innerHTML = '';
+  markerClusterGroup.clearLayers();
+  markerLayerGroup.clearLayers();
+  markers = [];
+
+  const coordMap = new Map();
+  coordData.forEach(row => {
+    if (row.label && row.x && row.y) {
+      coordMap.set(row.label, { x: parseFloat(row.x), y: parseFloat(row.y) });
+    }
+  });
+
+  const rowData = [];
+  const autocompleteSet = new Set();
+  const allFields = new Set();
+
+  dataRows.forEach(row => {
+    const coord = coordMap.get(row.label);
+    if (coord) {
+      const { x, y } = coord;
+      row.x = x;
+      row.y = y;
+
+      const circleMarker = L.circleMarker([y, x], {
+        radius: 10,
+        fillColor: getMarkerColor(row[colorByColumn]),
+        color: getMarkerColor(row[colorByColumn]),
+        weight: 1,
+        opacity: 0.6,
+        fillOpacity: 0.6
+      });
+
+      row._marker = circleMarker;
+      rowData.push(row);
+      markers.push({ marker: circleMarker, x, y });
+
+      Object.keys(row).forEach(k => allFields.add(k));
+      Object.values(row).forEach(value => { if (value) autocompleteSet.add(value); });
+
+      let popupContent = `<b>${row.label}</b><br><table style="font-size: 12px;">`;
+      Object.entries(row).forEach(([key, val]) => {
+        if (!key.startsWith('_')) popupContent += `<tr><td><strong>${key}:</strong></td><td>${val || ''}</td></tr>`;
+      });
+      popupContent += '</table>';
+      circleMarker.bindPopup(popupContent);
+    }
+  });
+
+const colDefs = Array.from(allFields).filter(f => !f.startsWith('_')).map(f => {
+  const sampleValues = rowData.map(row => row[f]).filter(v => v != null && v !== '').slice(0, 20);
+  const isNumeric = sampleValues.every(v => !isNaN(v));
+  const isDate = /\bdate\b/i.test(f);
+;
+
+  let filterType = 'agTextColumnFilter';
+  if (isNumeric) {
+    filterType = 'agNumberColumnFilter';
+  } else if (isDate) {
+    filterType = 'agDateColumnFilter';
+  }
+
+  return {
+    field: f,
+    filter: filterType,
+    hide: ['x', 'y'].includes(f),
+    ...(isDate && {
+      filterParams: {
+        comparator: function (filterLocalDateAtMidnight, cellValue) {
+          const cellDate = new Date(cellValue);
+          return cellDate.setHours(0, 0, 0, 0) - filterLocalDateAtMidnight;
+        }
+      },
+      valueFormatter: params => {
+        const date = new Date(params.value);
+        return isNaN(date.getTime()) ? params.value : date.toLocaleDateString();
+      }
+    })
+  };
+});
+;
+
+  gridOptions.api.setColumnDefs(colDefs);
+  gridOptions.api.setRowData(rowData);
+
+  populateChartColumnSelect();
+
+  updateSidebarChart();
+
+  const toggleContainer = document.getElementById('columnContent');
+  toggleContainer.innerHTML = '';
+  colDefs.forEach(colDef => {
+    const label = document.createElement('label');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = !colDef.hide;
+    checkbox.addEventListener('change', () => {
+      gridOptions.columnApi.setColumnVisible(colDef.field, checkbox.checked);
+    });
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode(' ' + colDef.field));
+    toggleContainer.appendChild(label);
+  });
+
+  const dataList = document.getElementById('autocomplete');
+  autocompleteSet.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item;
+    dataList.appendChild(option);
+  });
+
+  colorByColumn = colDefs[0]?.field || null;
+  const colSelect = document.getElementById('colorBy');
+  colSelect.innerHTML = '';
+  colDefs.forEach(col => {
+    const option = document.createElement('option');
+    option.value = col.field;
+    option.textContent = `Color by: ${col.field}`;
+    colSelect.appendChild(option);
+  });
+  if (colorByColumn) colSelect.value = colorByColumn;
+
+  document.getElementById('rowCount').textContent = `Rows: ${rowData.length}`;
+  updateVisibleMarkers();
+}
+
+document.getElementById('colorBy').addEventListener('change', (e) => {
+  colorByColumn = e.target.value;
+  updateVisibleMarkers();
+});
+
+// Handle dataset select dropdown and upload option
+document.getElementById('datasetSelect').addEventListener('change', function(e) {
+  const val = e.target.value;
+  if (val === 'upload') {
+    // Trigger hidden file input
+    document.getElementById('csvFileInput').click();
+  } else {
+    const [coordFile, dataFile] = val.split('|');
+    loadAndMergeCSVs(coordFile, dataFile);
+  }
+});
+
+document.getElementById('csvFileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: function(dataResults) {
+      Papa.parse('coordinates.csv', {
+        download: true,
+        header: true,
+        skipEmptyLines: true,
+        complete: function(coordResults) {
+          setupGridAndMarkers(coordResults.data, dataResults.data);
+          // Reset dropdown and file input so user can upload again
+          document.getElementById('datasetSelect').value = '';
+          e.target.value = '';
+        },
+        error: function(err) {
+          alert('Error loading coordinates.csv: ' + err.message);
+        }
+      });
+    },
+    error: function(err) {
+      alert('Error parsing uploaded CSV: ' + err.message);
+    }
+  });
+});
+
+function updateVisibleMarkers() {
+  markerClusterGroup.clearLayers();
+  markerLayerGroup.clearLayers();
+  colorMap.clear();
+
+  const legendValues = new Set();
+
+  gridOptions.api.forEachNodeAfterFilter(node => {
+    const marker = node.data._marker;
+    const colorVal = node.data[colorByColumn];
+    const color = getMarkerColor(colorVal);
+
+    if (marker) {
+      animateColorChange(marker, color);
+      (useClustering ? markerClusterGroup : markerLayerGroup).addLayer(marker);
+      legendValues.add(colorVal);
+    }
+  });
+
+  if (useClustering) {
+    map.addLayer(markerClusterGroup);
+    map.removeLayer(markerLayerGroup);
+  } else {
+    map.addLayer(markerLayerGroup);
+    map.removeLayer(markerClusterGroup);
+  }
+
+  updateLegend(legendValues);
+}
+
+function getColorForValue(value) {
+  if (!colorMap.has(value)) {
+    const hue = (colorMap.size * 47) % 360;
+    const color = `hsl(${hue},70%,50%)`;
+    colorMap.set(value, color);
+  }
+  return colorMap.get(value);
+}
+
+function getMarkerColor(value) {
+  return getColorForValue(value || 'undefined');
+}
+
+function animateColorChange(marker, newColor) {
+  const el = marker._path;
+  if (el) {
+    el.style.transition = 'fill 0.5s ease, stroke 0.5s ease';
+  }
+  marker.setStyle({
+    fillColor: newColor,
+    color: newColor
+  });
+}
+
+function updateLegend(values) {
+  const legend = document.getElementById('legend');
+  legend.innerHTML = `<strong>Color by: ${colorByColumn}</strong><br>`;
+
+  const counts = {};
+  gridOptions.api.forEachNodeAfterFilter(node => {
+    const val = node.data[colorByColumn] || 'undefined';
+    counts[val] = (counts[val] || 0) + 1;
+  });
+
+  const maxCount = Math.max(...Object.values(counts));
+
+  Array.from(values).sort().forEach(val => {
+    const color = getMarkerColor(val);
+    const count = counts[val] || 0;
+    const barWidth = (count / maxCount) * 20;
+
+    legend.innerHTML += `
+      <div style="display: flex; align-items: center; margin-bottom: 4px;">
+        <span style="display:inline-block;width:12px;height:12px;background:${color};margin-right:6px;"></span>
+        <span style="flex:1;">${val || 'undefined'}</span>
+        <div style="background:${color};height:8px;width:${barWidth}px;margin-left:4px;"></div>
+        <span style="margin-left:4px;font-size:0.85em;">${count}</span>
+      </div>
+    `;
+  });
+}
+
+
+function exportToCSV() {
+  gridOptions.api.exportDataAsCsv();
+}
+
+loadSelectedDataset();
+
+const sidebar = document.getElementById('sidebar');
+const resizer = document.getElementById('sidebar-resizer');
+const container = document.getElementById('container'); // the flex container of sidebar+map
+
+let isResizing = false;
+
+resizer.addEventListener('mousedown', e => {
+  isResizing = true;
+  document.body.style.cursor = 'ew-resize';
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', e => {
+  if (!isResizing) return;
+
+  const containerRect = container.getBoundingClientRect();
+  let newWidth = e.clientX - containerRect.left;
+
+  const minWidth = 200;
+  const maxWidth = 500;
+  if (newWidth < minWidth) newWidth = minWidth;
+  if (newWidth > maxWidth) newWidth = maxWidth;
+
+  sidebar.style.width = newWidth + 'px';
+});
+
+document.addEventListener('mouseup', e => {
+  if (isResizing) {
+    isResizing = false;
+    document.body.style.cursor = 'default';
+
+    if (gridOptions.api) {
+      gridOptions.api.sizeColumnsToFit();
+    }
+  }
+});
+
+function loadSelectedDataset() {
+  const value = document.getElementById('datasetSelect').value;
+  if (value !== 'upload' && value) {
+    const [coordFile, dataFile] = value.split('|');
+    loadAndMergeCSVs(coordFile, dataFile);
+  }
+}
+
+function toggleChartSidebar(forceClose = false) {
+  const sidebar = document.getElementById('chartSidebar');
+  const isOpen = sidebar.style.transform === 'translateX(0%)';
+  sidebar.style.transform = forceClose || isOpen ? 'translateX(100%)' : 'translateX(0%)';
+}
+
+document.getElementById('toggleChartSidebar').addEventListener('click', () => {
+  toggleChartSidebar();
+});
+
+let sidebarChart = null;
+
+document.getElementById('columnSelect').addEventListener('change', updateSidebarChart);
+
+function populateChartColumnSelect() {
+  const select = document.getElementById('columnSelect');
+  select.innerHTML = '';
+
+  const columns = gridOptions.columnDefs.map(c => c.field);
+  columns.forEach(col => {
+    const opt = document.createElement('option');
+    opt.value = col;
+    opt.textContent = col;
+    select.appendChild(opt);
+  });
+}
+
+function updateSidebarChart() {
+  // const chartType = document.getElementById('chartTypeSelect').value;
+  const col = document.getElementById('columnSelect').value;
+  if (!col) return;
+
+  const counts = {};
+
+  gridOptions.api.forEachNodeAfterFilter(node => {
+    const val = node.data[col];
+    if (val) {
+      const key = val.trim();
+      counts[key] = (counts[key] || 0) + 1;
+    }
+  });
+
+  // Try parsing as dates
+  const isDate = col.toLowerCase().includes('date');
+
+  let labels = Object.keys(counts);
+  if (isDate) {
+    labels = labels.sort((a, b) => new Date(a) - new Date(b));
+  } else {
+    labels = labels.sort(); // alpha order for non-date
+  }
+
+  const values = labels.map(k => counts[k]);
+
+  const ctx = document.getElementById('sidebarChart').getContext('2d');
+  if (sidebarChart) sidebarChart.destroy();
+
+  sidebarChart = new Chart(ctx, {
+    type: 'bar',  // use 'bar' even for date
+    data: {
+      labels,
+      datasets: [{
+        label: `Bar Chart`,
+        data: values,
+        backgroundColor: labels.map((_, i) => `hsl(${i * 30 % 360}, 70%, 60%)`),
+        borderColor: 'rgba(0,0,0,0.2)',
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        x: {
+          title: { display: true, text: col },
+          ticks: {
+            callback: function(value, index, ticks) {
+              // Format date labels nicely if it’s a date
+              const label = this.getLabelForValue(value);
+              return isDate ? new Date(label).toLocaleDateString() : label;
+            },
+            autoSkip: true,
+            maxRotation: 45
+          }
+        },
+        y: {
+          beginAtZero: true,
+          title: { display: true, text: 'Count' }
+        }
+      }
+    }
+  });
+}
+
+
+populateChartColumnSelect();
+updateSidebarChart();
+
+</script>
+</body>
+</html>
